@@ -34,7 +34,6 @@ minilang/
 minilang-ui/        # React + Vite Web IDE
 server.py           # Python HTTP API (compiler backend)
 main.py             # CLI entry point
-tests/              # Pytest test suite
 ```
 
 ---
@@ -154,24 +153,6 @@ func main() -> void {
     }
 }
 ```
-
----
-
-## 🧪 Running Tests
-
-```bash
-# From the root directory (with venv activated)
-$env:PYTHONPATH="."       # Windows PowerShell
-# export PYTHONPATH=.     # macOS/Linux
-
-pytest -v
-```
-
-Test coverage includes:
-- `test_lexer.py` — Token recognition and error cases
-- `test_parser.py` — Grammar rule validation and AST structure
-- `test_semantic.py` — Type checking and scope rules
-- `test_ir.py` — TAC instruction generation
 
 ---
 

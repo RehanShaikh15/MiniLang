@@ -1,0 +1,6 @@
+/* App-specific overrides (kept minimal, most styles in index.css) */
+.App {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}

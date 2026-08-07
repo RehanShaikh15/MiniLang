@@ -1,0 +1,84 @@
+// MODULE 2 — GRAMMAR (grammar/minilang.lark)
+?start: program
+
+program: (top_level_stmt)*
+
+?top_level_stmt: func_def
+               | var_decl ";"
+
+func_def: "func" IDENTIFIER "(" [params] ")" "->" type "{" stmt_list "}"
+
+params: param ("," param)*
+param: IDENTIFIER ":" type
+
+?stmt: var_decl ";" -> var_decl_stmt
+     | assign_stmt ";"
+     | if_stmt
+     | while_stmt
+     | for_stmt
+     | return_stmt ";"
+     | expr ";" -> expr_stmt
+     | "{" stmt_list "}" -> block_stmt
+
+stmt_list: (stmt)*
+
+var_decl: type IDENTIFIER ["=" expr]
+assign_stmt: IDENTIFIER "=" expr
+
+if_stmt: "if" "(" expr ")" stmt ["else" stmt]
+while_stmt: "while" "(" expr ")" stmt
+for_stmt: "for" "(" [for_init] ";" [expr] ";" [for_step] ")" stmt
+?for_init: var_decl | assign_stmt | expr
+?for_step: assign_stmt | expr
+
+return_stmt: "return" [expr]
+
+?expr: logic_or
+
+?logic_or: logic_and (OR logic_and)*
+?logic_and: equality (AND equality)*
+?equality: comparison (EQ_NE comparison)*
+?comparison: term (COMP term)*
+?term: factor (PLUS_MINUS factor)*
+?factor: power (MUL_DIV_MOD power)*
+?power: unary
+      | unary POW power
+
+?unary: [NOT_MINUS] primary
+
+?primary: INTEGER_LIT -> int_lit
+        | FLOAT_LIT -> float_lit
+        | STRING_LIT -> string_lit
+        | "true" -> true_lit
+        | "false" -> false_lit
+        | IDENTIFIER "(" [args] ")" -> func_call
+        | IDENTIFIER -> var_ref
+        | "(" expr ")"
+
+args: expr ("," expr)*
+
+type: "int" -> type_int
+    | "float" -> type_float
+    | "bool" -> type_bool
+    | "string" -> type_string
+    | "void" -> type_void
+
+// Terminals
+IDENTIFIER: /[a-zA-Z_]\w*/
+INTEGER_LIT: /\d+/
+FLOAT_LIT: /\d+\.\d+/
+STRING_LIT: /"(?:[^"\\]|\\.)*"/
+
+OR: "||"
+AND: "&&"
+EQ_NE: "==" | "!="
+COMP: "<" | "<=" | ">" | ">="
+PLUS_MINUS: "+" | "-"
+MUL_DIV_MOD: "*" | "/" | "%"
+POW: "^"
+NOT_MINUS: "!" | "-"
+
+%import common.WS
+%ignore WS
+%import common.CPP_COMMENT
+%ignore CPP_COMMENT
