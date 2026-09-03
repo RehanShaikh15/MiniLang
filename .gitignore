@@ -16,6 +16,8 @@ build/
 
 # React / Node
 minilang-ui/node_modules/
+minilang-ui/dist/
+minilang-ui/.eslintrc.cjs
 
 # IDE / Editor
 .vscode/

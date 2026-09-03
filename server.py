@@ -12,6 +12,8 @@ from minilang.parser.parser import Parser
 from minilang.semantic.analyzer import SemanticAnalyzer
 from minilang.ir.ir_generator import IRGenerator
 from minilang.error.error_handler import CompilerError
+from minilang.ai.ai_service import get_ai_service
+from minilang.ai.context import extract_symbols, get_code_around_cursor, format_symbols_for_prompt, find_target_at_line
 
 def generate_lexer_dfa():
     """Generate a simplified DFA representation from the lexer's token patterns.
@@ -217,83 +219,213 @@ class CompilerAPI(BaseHTTPRequestHandler):
         
         try:
             req = json.loads(post_data.decode('utf-8'))
-            source = req.get('code', '')
-            
-            response = {
-                "status": "success",
-                "tokens": [],
-                "ast": None,
-                "ir": [],
-                "automata": None,
-                "errors": []
-            }
-            
-            try:
-                # 1. Lexer
-                lexer = Lexer(source)
-                tokens = lexer.tokenize()
-                # Exclude EOF from being sent to UI usually, or flag it
-                response['tokens'] = [
-                    {"type": t.type.name, "value": t.value, "line": t.line, "col": t.column}
-                    for t in tokens if t.type.name != 'EOF'
-                ]
-                if lexer.errors:
-                    for err in lexer.errors:
-                        response['errors'].append({"message": err.message, "line": err.line, "col": err.col})
-                    self._send_json(400, response)
-                    return
-                
-                # 2. Parser
-                if _GLOBAL_PARSER is None:
-                    _GLOBAL_PARSER = Parser()
-                ast = _GLOBAL_PARSER.parse(source)
-                response['ast'] = ast_to_ui(ast)
-                
-                # 3. Semantic Analysis
-                analyzer = SemanticAnalyzer()
-                analyzer.analyze(ast)
-                
-                # 4. IR Generator
-                gen = IRGenerator()
-                gen.generate(ast)
-                ir = gen.code
-                ir_list = []
-                for instr in ir:
-                    text = str(instr)
-                    # Simple heuristic to colorize IR in UI
-                    instr_type = "op"
-                    if "LABEL" in instr.op or ":" in text: instr_type = "label"
-                    elif "GOTO" in instr.op or "IF" in instr.op: instr_type = "goto"
-                    elif "=" in text and not ("CALL" in text or "op" in text): instr_type = "assign"
-                    ir_list.append({"type": instr_type, "text": text})
-                response['ir'] = ir_list
-
-                # 5. Automata data
-                response['automata'] = {
-                    'dfa': generate_lexer_dfa(),
-                    'cfg': build_cfg(ir)
-                }
-
-            except CompilerError as e:
-                response["status"] = "error"
-                response["errors"].append({
-                    "message": e.message,
-                    "line": getattr(e, 'line', 0),
-                    "col": getattr(e, 'col', 0)
-                })
-            except Exception as e:
-                response["status"] = "error"
-                response["errors"].append({
-                    "message": f"Unexpected compiler error: {str(e)}\n{traceback.format_exc()}",
-                    "line": 0,
-                    "col": 0
-                })
-
-            self._send_json(200, response)
-            
         except json.JSONDecodeError:
             self._send_json(400, {"status": "error", "errors": [{"message": "Invalid JSON"}]})
+            return
+
+        # Route to the correct handler based on path
+        path = self.path
+        
+        if path == '/api/autocomplete':
+            self._handle_autocomplete(req)
+        elif path == '/api/explain-error':
+            self._handle_explain_error(req)
+        elif path == '/api/refactor':
+            self._handle_refactor(req)
+        elif path == '/api/generate-docs':
+            self._handle_generate_docs(req)
+        else:
+            # Default: compile endpoint (handles both / and /api/compile)
+            self._handle_compile(req)
+
+    def _handle_compile(self, req):
+        """Handle the main compile endpoint."""
+        global _GLOBAL_PARSER
+        source = req.get('code', '')
+        
+        response = {
+            "status": "success",
+            "tokens": [],
+            "ast": None,
+            "ir": [],
+            "automata": None,
+            "errors": []
+        }
+        
+        try:
+            # 1. Lexer
+            lexer = Lexer(source)
+            tokens = lexer.tokenize()
+            response['tokens'] = [
+                {"type": t.type.name, "value": t.value, "line": t.line, "col": t.column}
+                for t in tokens if t.type.name != 'EOF'
+            ]
+            if lexer.errors:
+                for err in lexer.errors:
+                    response['errors'].append({"message": err.message, "line": err.line, "col": err.col})
+                self._send_json(400, response)
+                return
             
+            # 2. Parser
+            if _GLOBAL_PARSER is None:
+                _GLOBAL_PARSER = Parser()
+            ast = _GLOBAL_PARSER.parse(source)
+            response['ast'] = ast_to_ui(ast)
+            
+            # 3. Semantic Analysis
+            analyzer = SemanticAnalyzer()
+            analyzer.analyze(ast)
+            
+            # 4. IR Generator
+            gen = IRGenerator()
+            gen.generate(ast)
+            ir = gen.code
+            ir_list = []
+            for instr in ir:
+                text = str(instr)
+                instr_type = "op"
+                if "LABEL" in instr.op or ":" in text: instr_type = "label"
+                elif "GOTO" in instr.op or "IF" in instr.op: instr_type = "goto"
+                elif "=" in text and not ("CALL" in text or "op" in text): instr_type = "assign"
+                ir_list.append({"type": instr_type, "text": text})
+            response['ir'] = ir_list
+
+            # 5. Automata data
+            response['automata'] = {
+                'dfa': generate_lexer_dfa(),
+                'cfg': build_cfg(ir)
+            }
+
+        except CompilerError as e:
+            response["status"] = "error"
+            response["errors"].append({
+                "message": e.message,
+                "line": getattr(e, 'line', 0),
+                "col": getattr(e, 'col', 0)
+            })
+        except Exception as e:
+            response["status"] = "error"
+            response["errors"].append({
+                "message": f"Unexpected compiler error: {str(e)}\n{traceback.format_exc()}",
+                "line": 0,
+                "col": 0
+            })
+
+        self._send_json(200, response)
+    
+    # ─────────────────────────────────────────────
+    # AI Feature 1: Autocomplete
+    # ─────────────────────────────────────────────
+    def _handle_autocomplete(self, req):
+        """Handle POST /api/autocomplete — AI-powered code completion."""
+        code = req.get('code', '')
+        cursor_line = req.get('cursorLine', 1)
+        cursor_col = req.get('cursorCol', 0)
+        
+        ai = get_ai_service()
+        if not ai.available:
+            self._send_json(200, {"suggestion": None, "error": "AI service not available"})
+            return
+        
+        try:
+            # Extract compiler context
+            symbols = extract_symbols(code)
+            symbols_text = format_symbols_for_prompt(symbols)
+            context = get_code_around_cursor(code, cursor_line, cursor_col)
+            
+            # Get AI suggestion
+            suggestion = ai.get_autocomplete(
+                code_before=context['before'],
+                code_after=context['after'],
+                symbols_text=symbols_text
+            )
+            
+            self._send_json(200, {"suggestion": suggestion})
+            
+        except Exception as e:
+            print(f"[Autocomplete Error] {e}")
+            traceback.print_exc()
+            self._send_json(200, {"suggestion": None, "error": str(e)})
+    
+    # ─────────────────────────────────────────────
+    # AI Feature 2: Error Explanation
+    # ─────────────────────────────────────────────
+    def _handle_explain_error(self, req):
+        """Handle POST /api/explain-error — beginner-friendly error explanations."""
+        error_message = req.get('error', '')
+        code = req.get('code', '')
+        
+        ai = get_ai_service()
+        if not ai.available:
+            self._send_json(200, {"explanation": None, "error": "AI service not available"})
+            return
+        
+        try:
+            result = ai.explain_error(error_message, code)
+            self._send_json(200, result or {"explanation": "Could not generate explanation.", "suggestion": "", "example": ""})
+            
+        except Exception as e:
+            print(f"[Error Explanation Error] {e}")
+            traceback.print_exc()
+            self._send_json(200, {"explanation": None, "error": str(e)})
+    
+    # ─────────────────────────────────────────────
+    # AI Feature 3: Refactoring
+    # ─────────────────────────────────────────────
+    def _handle_refactor(self, req):
+        """Handle POST /api/refactor — AI refactoring suggestions."""
+        code = req.get('code', '')
+        selection = req.get('selection', '')
+        
+        ai = get_ai_service()
+        if not ai.available:
+            self._send_json(200, {"suggestions": None, "error": "AI service not available"})
+            return
+        
+        if not selection.strip():
+            self._send_json(200, {"suggestions": None, "error": "No code selected"})
+            return
+        
+        try:
+            suggestions = ai.suggest_refactor(code, selection)
+            self._send_json(200, {"suggestions": suggestions})
+            
+        except Exception as e:
+            print(f"[Refactor Error] {e}")
+            traceback.print_exc()
+            self._send_json(200, {"suggestions": None, "error": str(e)})
+    
+    # ─────────────────────────────────────────────
+    # AI Feature 4: Documentation Generator
+    # ─────────────────────────────────────────────
+    def _handle_generate_docs(self, req):
+        """Handle POST /api/generate-docs — auto-generate doc comments."""
+        code = req.get('code', '')
+        target_line = req.get('targetLine', 1)
+        
+        ai = get_ai_service()
+        if not ai.available:
+            self._send_json(200, {"documentation": None, "error": "AI service not available"})
+            return
+        
+        try:
+            target = find_target_at_line(code, target_line)
+            if not target:
+                self._send_json(200, {"documentation": None, "error": "No function or variable found at this line"})
+                return
+            
+            docs = ai.generate_docs(code, target)
+            self._send_json(200, {
+                "documentation": docs,
+                "insertLine": target['line'],
+                "targetKind": target['kind']
+            })
+            
+        except Exception as e:
+            print(f"[Doc Generator Error] {e}")
+            traceback.print_exc()
+            self._send_json(200, {"documentation": None, "error": str(e)})
+
     def _send_json(self, status_code, data):
         self.send_response(status_code)
         self.send_header('Content-Type', 'application/json')
@@ -305,4 +437,10 @@ if __name__ == '__main__':
     server_address = ('', port)
     httpd = HTTPServer(server_address, CompilerAPI)
     print(f"Starting Python Compiler API on port {port}...")
+    print(f"  POST /           — Compile MiniLang code")
+    print(f"  POST /api/autocomplete   — AI autocomplete")
+    print(f"  POST /api/explain-error  — AI error explanation")
+    print(f"  POST /api/refactor       — AI refactoring")
+    print(f"  POST /api/generate-docs  — AI doc generator")
     httpd.serve_forever()
+
