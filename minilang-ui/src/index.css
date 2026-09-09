@@ -1150,6 +1150,52 @@ body {
   backdrop-filter: blur(12px);
 }
 
+/* ======= PROGRAM OUTPUT (Terminal) ======= */
+.program-output {
+  height: 100%;
+}
+
+.output-terminal {
+  background: #000;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  padding: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  min-height: 120px;
+  position: relative;
+  overflow: auto;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.output-terminal::before {
+  content: '● ● ●';
+  display: block;
+  color: var(--text-muted);
+  font-size: 8px;
+  letter-spacing: 4px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.output-line {
+  color: var(--code-string);
+  animation: slide-in 0.2s ease-out;
+}
+
+.output-line.output-error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.output-prompt {
+  color: var(--accent-primary);
+  margin-right: 8px;
+  opacity: 0.7;
+  user-select: none;
+}
+
 /* ======= STATUS BAR HINT ======= */
 .status-hint {
   color: var(--accent-primary);

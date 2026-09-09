@@ -34,6 +34,7 @@ function App() {
   const [irCode, setIrCode] = useState([])
   const [automata, setAutomata] = useState(null)
   const [errors, setErrors] = useState([])
+  const [programOutput, setProgramOutput] = useState([])
   const [compiledOnce, setCompiledOnce] = useState(false)
 
   // AI Feature States
@@ -78,6 +79,7 @@ function App() {
       setAst(data.ast || null)
       setIrCode(data.ir || [])
       setAutomata(data.automata || null)
+      setProgramOutput(data.output || [])
       
       if (data.status === 'success') {
         setStatus('success')
@@ -340,6 +342,7 @@ function App() {
     setIrCode([])
     setAutomata(null)
     setErrors([])
+    setProgramOutput([])
     setStatus('ready')
     setCompiledOnce(false)
     setSuggestion(null)
@@ -353,6 +356,7 @@ function App() {
     { id: 'ast', label: 'AST', count: ast ? 1 : 0 },
     { id: 'ir', label: 'IR Code', count: irCode.length },
     { id: 'automata', label: 'Automata', count: automata ? 1 : 0 },
+    { id: 'output', label: 'Output', count: programOutput.length },
     { id: 'errors', label: 'Errors', count: errors.length },
   ]
 
@@ -510,6 +514,25 @@ function App() {
 
             {compiledOnce && activeTab === 'automata' && (
               <AutomataView automata={automata} />
+            )}
+
+            {compiledOnce && activeTab === 'output' && (
+              programOutput.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-state-icon">💻</div>
+                  <div>No output — program did not produce any print statements</div>
+                </div>
+              ) : (
+                <div className="program-output">
+                  <div className="output-terminal">
+                    {programOutput.map((line, i) => (
+                      <div key={i} className={`output-line ${line.startsWith('[Runtime Error]') ? 'output-error' : ''}`}>
+                        <span className="output-prompt">{'>'}</span> {line}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
             )}
 
             {compiledOnce && activeTab === 'errors' && (

@@ -19,9 +19,14 @@ minilang-ui/node_modules/
 minilang-ui/dist/
 minilang-ui/.eslintrc.cjs
 
+minilang-ui-2/node_modules/
+minilang-ui-2/dist/
+minilang-ui-2/.eslintrc.cjs
+
 # IDE / Editor
 .vscode/
 .idea/
+.agent/
 *.swp
 *.swo
 *~
@@ -33,3 +38,8 @@ Desktop.ini
 
 # Pyright
 pyrightconfig.json
+
+# Local LLM weights
+*.gguf
+*.bin
+*.pt

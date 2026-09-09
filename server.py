@@ -12,6 +12,7 @@ from minilang.parser.parser import Parser
 from minilang.semantic.analyzer import SemanticAnalyzer
 from minilang.ir.ir_generator import IRGenerator
 from minilang.error.error_handler import CompilerError
+from minilang.interpreter.interpreter import Interpreter, RuntimeError as MiniLangRuntimeError
 from minilang.ai.ai_service import get_ai_service
 from minilang.ai.context import extract_symbols, get_code_around_cursor, format_symbols_for_prompt, find_target_at_line
 
@@ -249,6 +250,7 @@ class CompilerAPI(BaseHTTPRequestHandler):
             "ast": None,
             "ir": [],
             "automata": None,
+            "output": [],
             "errors": []
         }
         
@@ -295,6 +297,18 @@ class CompilerAPI(BaseHTTPRequestHandler):
                 'dfa': generate_lexer_dfa(),
                 'cfg': build_cfg(ir)
             }
+
+            # 6. Interpreter — execute the program and capture output
+            try:
+                interpreter = Interpreter()
+                interpreter.run(ast)
+                response['output'] = interpreter.output
+            except MiniLangRuntimeError as re:
+                response['output'] = interpreter.output  # partial output before error
+                response['output'].append(f"[Runtime Error] {re.message}")
+            except Exception as re:
+                response['output'] = getattr(interpreter, 'output', [])
+                response['output'].append(f"[Runtime Error] {str(re)}")
 
         except CompilerError as e:
             response["status"] = "error"
