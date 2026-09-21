@@ -14,10 +14,13 @@ build/
 # Environment variables
 .env
 
-# React / Node — UI folders (kept locally, not in repo)
+# React / Node — UI folders
 minilang-ui/
 minilang-ui-2/
-compilerlab-ui/
+
+# Ignore builds and dependencies for the active UI
+compilerlab-ui/node_modules/
+compilerlab-ui/.next/
 
 # Scratch / test scripts
 scratch_test_ollama.py
