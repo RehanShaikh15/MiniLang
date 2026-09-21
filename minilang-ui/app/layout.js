@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "CompilerLab",
+  title: "MiniLang IDE",
   description: "Interactive compiler inspector frontend demo",
 };
 
