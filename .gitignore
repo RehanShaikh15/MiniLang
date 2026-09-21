@@ -14,14 +14,13 @@ build/
 # Environment variables
 .env
 
-# React / Node
-minilang-ui/node_modules/
-minilang-ui/dist/
-minilang-ui/.eslintrc.cjs
+# React / Node — UI folders (kept locally, not in repo)
+minilang-ui/
+minilang-ui-2/
+compilerlab-ui/
 
-minilang-ui-2/node_modules/
-minilang-ui-2/dist/
-minilang-ui-2/.eslintrc.cjs
+# Scratch / test scripts
+scratch_test_ollama.py
 
 # IDE / Editor
 .vscode/

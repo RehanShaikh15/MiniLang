@@ -14,7 +14,7 @@ from minilang.ir.ir_generator import IRGenerator
 from minilang.error.error_handler import CompilerError
 from minilang.interpreter.interpreter import Interpreter, RuntimeError as MiniLangRuntimeError
 from minilang.ai.ai_service import get_ai_service
-from minilang.ai.context import extract_symbols, get_code_around_cursor, format_symbols_for_prompt, find_target_at_line
+from minilang.ai.context import extract_symbols, get_code_around_cursor, format_symbols_for_prompt, find_target_at_line, get_code_snippet
 
 def generate_lexer_dfa():
     """Generate a simplified DFA representation from the lexer's token patterns.
@@ -204,13 +204,27 @@ _GLOBAL_PARSER = None
 class CompilerAPI(BaseHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         BaseHTTPRequestHandler.end_headers(self)
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
+
+    def do_GET(self):
+        path = self.path
+        if path == '/api/check-api-key':
+            ai = get_ai_service()
+            self._send_json(200, {
+                "configured": ai.groq_available,
+                "backend": "groq" if ai.groq_available else None
+            })
+        elif path == '/api/dfa':
+            dfa = generate_lexer_dfa()
+            self._send_json(200, {"automata": dfa})
+        else:
+            self._send_json(404, {"error": "Not found"})
 
     def do_POST(self):
         global _GLOBAL_PARSER
@@ -235,6 +249,8 @@ class CompilerAPI(BaseHTTPRequestHandler):
             self._handle_refactor(req)
         elif path == '/api/generate-docs':
             self._handle_generate_docs(req)
+        elif path == '/api/set-api-key':
+            self._handle_set_api_key(req)
         else:
             # Default: compile endpoint (handles both / and /api/compile)
             self._handle_compile(req)
@@ -319,10 +335,16 @@ class CompilerAPI(BaseHTTPRequestHandler):
             })
         except Exception as e:
             response["status"] = "error"
+            
+            # If it's a lark error, try to extract line/col from the exception
+            line, col = 0, 0
+            if hasattr(e, 'line') and hasattr(e, 'column'):
+                line, col = e.line, e.column
+                
             response["errors"].append({
-                "message": f"Unexpected compiler error: {str(e)}\n{traceback.format_exc()}",
-                "line": 0,
-                "col": 0
+                "message": f"Syntax error:\n{str(e)}",
+                "line": line,
+                "col": col
             })
 
         self._send_json(200, response)
@@ -335,6 +357,7 @@ class CompilerAPI(BaseHTTPRequestHandler):
         code = req.get('code', '')
         cursor_line = req.get('cursorLine', 1)
         cursor_col = req.get('cursorCol', 0)
+        backend = req.get('backend')
         
         ai = get_ai_service()
         if not ai.available:
@@ -351,7 +374,8 @@ class CompilerAPI(BaseHTTPRequestHandler):
             suggestion = ai.get_autocomplete(
                 code_before=context['before'],
                 code_after=context['after'],
-                symbols_text=symbols_text
+                symbols_text=symbols_text,
+                backend=backend
             )
             
             self._send_json(200, {"suggestion": suggestion})
@@ -368,6 +392,8 @@ class CompilerAPI(BaseHTTPRequestHandler):
         """Handle POST /api/explain-error — beginner-friendly error explanations."""
         error_message = req.get('error', '')
         code = req.get('code', '')
+        backend = req.get('backend')
+        line = req.get('line')
         
         ai = get_ai_service()
         if not ai.available:
@@ -375,7 +401,26 @@ class CompilerAPI(BaseHTTPRequestHandler):
             return
         
         try:
-            result = ai.explain_error(error_message, code)
+            if line is not None:
+                snippet = get_code_snippet(code, line, context_lines=4)
+                if snippet:
+                    code = snippet
+            
+            # Since we will implement streaming for this endpoint, we'll check if the client wants a stream
+            stream = req.get('stream', False)
+            if stream:
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Connection', 'keep-alive')
+                self.end_headers()
+                
+                for chunk in ai.explain_error_stream(error_message, code, backend=backend):
+                    self.wfile.write(f"data: {json.dumps({'chunk': chunk})}\n\n".encode('utf-8'))
+                    self.wfile.flush()
+                return
+            
+            result = ai.explain_error(error_message, code, backend=backend)
             self._send_json(200, result or {"explanation": "Could not generate explanation.", "suggestion": "", "example": ""})
             
         except Exception as e:
@@ -390,6 +435,7 @@ class CompilerAPI(BaseHTTPRequestHandler):
         """Handle POST /api/refactor — AI refactoring suggestions."""
         code = req.get('code', '')
         selection = req.get('selection', '')
+        backend = req.get('backend')
         
         ai = get_ai_service()
         if not ai.available:
@@ -401,7 +447,7 @@ class CompilerAPI(BaseHTTPRequestHandler):
             return
         
         try:
-            suggestions = ai.suggest_refactor(code, selection)
+            suggestions = ai.suggest_refactor(code, selection, backend=backend)
             self._send_json(200, {"suggestions": suggestions})
             
         except Exception as e:
@@ -415,7 +461,7 @@ class CompilerAPI(BaseHTTPRequestHandler):
     def _handle_generate_docs(self, req):
         """Handle POST /api/generate-docs — auto-generate doc comments."""
         code = req.get('code', '')
-        target_line = req.get('targetLine', 1)
+        backend = req.get('backend')
         
         ai = get_ai_service()
         if not ai.available:
@@ -423,22 +469,58 @@ class CompilerAPI(BaseHTTPRequestHandler):
             return
         
         try:
-            target = find_target_at_line(code, target_line)
-            if not target:
-                self._send_json(200, {"documentation": None, "error": "No function or variable found at this line"})
-                return
-            
-            docs = ai.generate_docs(code, target)
+            docs = ai.generate_full_docs(code, backend=backend)
             self._send_json(200, {
-                "documentation": docs,
-                "insertLine": target['line'],
-                "targetKind": target['kind']
+                "documentation": docs
             })
             
         except Exception as e:
             print(f"[Doc Generator Error] {e}")
             traceback.print_exc()
             self._send_json(200, {"documentation": None, "error": str(e)})
+
+    def _handle_set_api_key(self, req):
+        """Handle POST /api/set-api-key — save a new API key and reinitialize AI."""
+        api_key = req.get('apiKey', '').strip()
+        if not api_key:
+            self._send_json(400, {"success": False, "error": "API key cannot be empty."})
+            return
+
+        try:
+            # Update the .env file
+            env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+            lines = []
+            key_found = False
+            if os.path.exists(env_path):
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        if line.strip().startswith('GROQ_API_KEY='):
+                            lines.append(f'GROQ_API_KEY={api_key}\n')
+                            key_found = True
+                        else:
+                            lines.append(line)
+            if not key_found:
+                lines.append(f'GROQ_API_KEY={api_key}\n')
+
+            with open(env_path, 'w') as f:
+                f.writelines(lines)
+
+            # Also update the current process environment
+            os.environ['GROQ_API_KEY'] = api_key
+
+            # Reinitialize the AI service with the new key
+            import minilang.ai.ai_service as ai_mod
+            ai_mod._ai_service = ai_mod.AIService()
+
+            ai = get_ai_service()
+            self._send_json(200, {
+                "success": ai.groq_available,
+                "error": None if ai.groq_available else "Key saved but could not connect to Groq. Please check the key."
+            })
+        except Exception as e:
+            print(f"[Set API Key Error] {e}")
+            traceback.print_exc()
+            self._send_json(500, {"success": False, "error": str(e)})
 
     def _send_json(self, status_code, data):
         self.send_response(status_code)
@@ -451,7 +533,9 @@ if __name__ == '__main__':
     server_address = ('', port)
     httpd = HTTPServer(server_address, CompilerAPI)
     print(f"Starting Python Compiler API on port {port}...")
-    print(f"  POST /           — Compile MiniLang code")
+    print(f"  POST /                   — Compile MiniLang code")
+    print(f"  GET  /api/check-api-key  — Check if AI API key is configured")
+    print(f"  POST /api/set-api-key    — Set AI API key at runtime")
     print(f"  POST /api/autocomplete   — AI autocomplete")
     print(f"  POST /api/explain-error  — AI error explanation")
     print(f"  POST /api/refactor       — AI refactoring")

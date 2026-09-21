@@ -95,6 +95,23 @@ def get_code_around_cursor(code: str, line: int, col: int) -> Dict[str, str]:
         'current_line': current_line,
     }
 
+def get_code_snippet(code: str, line: int, context_lines: int = 5) -> str:
+    """Return a snippet of code around the given line number."""
+    lines = code.split('\n')
+    if not lines:
+        return ""
+    # line is 1-indexed
+    start_idx = max(0, line - 1 - context_lines)
+    end_idx = min(len(lines), line + context_lines)
+    
+    snippet_lines = []
+    for i in range(start_idx, end_idx):
+        prefix = "-> " if i == (line - 1) else "   "
+        snippet_lines.append(f"{prefix}{lines[i]}")
+        
+    return '\n'.join(snippet_lines)
+
+
 
 def format_symbols_for_prompt(symbols: List[Dict[str, Any]]) -> str:
     """Format extracted symbols into a human-readable string for AI prompts."""
@@ -123,25 +140,25 @@ def find_target_at_line(code: str, target_line: int) -> Optional[Dict[str, Any]]
     if target_line < 1 or target_line > len(lines):
         return None
     
-    line_text = lines[target_line - 1].strip()
-    
-    # Check for function definition
-    if line_text.startswith('func '):
-        return {
-            'kind': 'function',
-            'line': target_line,
-            'text': line_text,
-        }
-    
-    # Check for variable declaration (type name pattern)
     type_keywords = ['int', 'float', 'bool', 'string']
-    for tk in type_keywords:
-        if line_text.startswith(tk + ' '):
-            return {
-                'kind': 'variable',
-                'line': target_line,
-                'text': line_text,
-            }
+    
+    def check_line(text, line_idx):
+        if text.startswith('func '):
+            return {'kind': 'function', 'line': line_idx, 'text': text}
+        for tk in type_keywords:
+            if text.startswith(tk + ' '):
+                return {'kind': 'variable', 'line': line_idx, 'text': text}
+        return None
+
+    # Check exact line
+    line_text = lines[target_line - 1].strip()
+    match = check_line(line_text, target_line)
+    if match: return match
+    
+    # Check downwards up to 3 lines (user might click empty line above function)
+    for i in range(target_line, min(target_line + 3, len(lines))):
+        match = check_line(lines[i].strip(), i + 1)
+        if match: return match
     
     # Check surrounding lines (user might click inside a function body)
     # Walk upward to find the enclosing function

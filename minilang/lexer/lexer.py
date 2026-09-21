@@ -18,12 +18,12 @@ class Lexer:
         ('INTEGER_LIT', r'\d+'),
         ('STRING_LIT',  r'"(?:[^"\\]|\\.)*"'),
         ('IDENTIFIER',  r'[a-zA-Z_]\w*'),
+        ('COMMENT',     r'//[^\n]*'),
         ('OP_2CHAR',    r'==|!=|<=|>=|&&|\|\|'),
         ('OP_1CHAR',    r'[+\-*/%=<>!]'),
         ('DELIMITER',   r'[(){}\[\] ,;:]'),
         ('NEWLINE',     r'\n'),
         ('SKIP',        r'[ \t]+'),
-        ('COMMENT',     r'//[^\n]*'),
         ('MISMATCH',    r'.'),
     ]
 

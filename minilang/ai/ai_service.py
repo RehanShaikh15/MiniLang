@@ -4,6 +4,9 @@
 
 import os
 import traceback
+import json
+import urllib.request
+import urllib.error
 from typing import Dict, Any, List, Optional
 
 try:
@@ -36,7 +39,46 @@ class AIService:
         self._initialize()
     
     def _initialize(self):
-        """Initialize the Groq client with API key from environment."""
+        """Initialize the AI client with API key or local model from environment."""
+        self.ollama_model = os.environ.get('OLLAMA_MODEL', 'deepseek-coder:6.7b')
+        self.ollama_available = False
+        self.groq_available = False
+        
+        # Check Ollama
+        try:
+            req = urllib.request.Request("http://localhost:11434/")
+            with urllib.request.urlopen(req, timeout=1) as response:
+                if response.status == 200:
+                    self.ollama_available = True
+                    print(f"[AI Service] Ollama initialized locally ({self.ollama_model})")
+        except Exception as e:
+            print(f"[AI Service] Local Ollama not available on localhost:11434")
+            
+        # Check Groq
+        if GROQ_AVAILABLE:
+            api_key = os.environ.get('GROQ_API_KEY', '')
+            if not api_key:
+                # Try loading from .env file
+                env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '.env')
+                if os.path.exists(env_path):
+                    with open(env_path, 'r') as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith('GROQ_API_KEY=') and not line.startswith('#'):
+                                api_key = line.split('=', 1)[1].strip()
+                                break
+            
+            if api_key:
+                try:
+                    self.client = groq.Groq(api_key=api_key)
+                    self.groq_available = True
+                    print("[AI Service] Groq AI initialized successfully (groq/compound)")
+                except Exception as e:
+                    print(f"[AI Service] Failed to initialize Groq: {e}")
+        else:
+            print("[AI Service] groq module not installed.")
+            
+        self.available = self.ollama_available or self.groq_available
         if not GROQ_AVAILABLE:
             print("[AI Service] groq not installed. AI features disabled.")
             return
@@ -64,7 +106,92 @@ class AIService:
         except Exception as e:
             print(f"[AI Service] Failed to initialize Groq: {e}")
     
-    def _generate(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 60) -> Optional[str]:
+    def _generate(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 180, backend: Optional[str] = None) -> Optional[str]:
+        """Internal router method that calls the configured backend."""
+        if not self.available:
+            return None
+            
+        if backend == 'ollama' and self.ollama_available:
+            return self._generate_ollama(prompt, system_instruction, max_tokens, timeout)
+        elif self.groq_available:
+            return self._generate_groq(prompt, system_instruction, max_tokens, timeout)
+        else:
+            return None
+
+    def _generate_ollama(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 180) -> Optional[str]:
+        """Internal method to call local Ollama and return the response text."""
+        messages = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        messages.append({"role": "user", "content": prompt})
+        
+        payload = {
+            "model": self.ollama_model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": 0.3,
+                "num_predict": max_tokens
+            }
+        }
+        
+        try:
+            req = urllib.request.Request(
+                "http://localhost:11434/api/chat",
+                data=json.dumps(payload).encode('utf-8'),
+                headers={'Content-Type': 'application/json'}
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                if "message" in result and "content" in result["message"]:
+                    return result["message"]["content"].strip()
+            return None
+        except Exception as e:
+            print(f"[AI Service] Ollama generation error: {e}")
+            return None
+    def _generate_stream(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 180, backend: Optional[str] = None):
+        """Internal router method for streaming."""
+        if not self.available:
+            return
+            
+        if backend == 'ollama' and self.ollama_available:
+            yield from self._generate_ollama_stream(prompt, system_instruction, max_tokens, timeout)
+        elif self.groq_available:
+            # We will fallback to non-streaming for groq for now, and just yield it all at once
+            res = self._generate_groq(prompt, system_instruction, max_tokens, timeout)
+            if res:
+                yield res
+
+    def _generate_ollama_stream(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 180):
+        messages = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        messages.append({"role": "user", "content": prompt})
+        
+        payload = {
+            "model": self.ollama_model,
+            "messages": messages,
+            "stream": True,
+            "options": {
+                "temperature": 0.3
+            }
+        }
+        try:
+            req = urllib.request.Request(
+                "http://localhost:11434/api/chat",
+                data=json.dumps(payload).encode('utf-8'),
+                headers={'Content-Type': 'application/json'}
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                for line in response:
+                    if line:
+                        data = json.loads(line.decode('utf-8'))
+                        if "message" in data and "content" in data["message"]:
+                            yield data["message"]["content"]
+        except Exception as e:
+            print(f"[AI Service] Ollama generation error: {e}")
+
+    def _generate_groq(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 60) -> Optional[str]:
         """Internal method to call Groq and return the response text.
         Includes retry logic for rate-limit (429) errors."""
         if not self.available:
@@ -114,51 +241,47 @@ class AIService:
     # ─────────────────────────────────────────────
     # Feature 1: Autocomplete
     # ─────────────────────────────────────────────
-    def get_autocomplete(self, code_before: str, code_after: str, symbols_text: str) -> Optional[str]:
-        """Generate code completion suggestion.
+    def get_autocomplete(self, code_before: str, code_after: str, symbols_text: str, backend: Optional[str] = None) -> Optional[str]:
+        """Generate code completion suggestion."""
+        # Truncate context to improve speed and focus for local models
+        before_lines = code_before.split('\n')
+        after_lines = code_after.split('\n')
         
-        Args:
-            code_before: Code text before the cursor position
-            code_after: Code text after the cursor position  
-            symbols_text: Formatted string of symbols in scope
+        truncated_before = '\n'.join(before_lines[-15:])
+        truncated_after = '\n'.join(after_lines[:15])
         
-        Returns:
-            Completion text to insert at cursor, or None
-        """
-        system = f"""You are a code completion engine for MiniLang, a statically-typed programming language.
+        system = f"""You are a strict code completion engine for MiniLang, a statically-typed programming language.
 {MINILANG_REFERENCE}
 
-Rules:
-- Return ONLY the completion text that should be inserted at the cursor position. No explanation, no markdown, no code fences.
-- Complete the current line or statement naturally.
-- Use the symbols in scope to make type-correct suggestions.
-- Keep completions short (1-3 lines max). Prefer completing the current statement first.
-- If there's nothing useful to complete, return exactly the text: NO_SUGGESTION
-- Do NOT repeat code that already exists before the cursor.
-- Do NOT include any backticks or markdown formatting."""
+CRITICAL RULES:
+- The user will provide code with a [MISSING_CODE] marker.
+- Return ONLY the exact characters that belong in place of [MISSING_CODE].
+- NO markdown formatting (do not use ```).
+- NO explanations or conversational text.
+- Complete the current statement naturally.
+- Keep completions short (1-3 lines max).
+- If there's nothing useful to complete, return exactly: NO_SUGGESTION"""
 
         prompt = f"""{symbols_text}
 
-Code before cursor:
-{code_before}
-█ <-- cursor is here
-Code after cursor:
-{code_after}
+```minilang
+{truncated_before}[MISSING_CODE]{truncated_after}
+```
 
-Complete from the cursor position:"""
+Please output ONLY the text that replaces [MISSING_CODE]:"""
 
-        result = self._generate(prompt, system, max_tokens=200)
+        result = self._generate(prompt, system, max_tokens=60, backend=backend)
         
-        if result and result != 'NO_SUGGESTION' and not result.startswith('```'):
+        if result and result != 'NO_SUGGESTION':
             # Clean up: remove any markdown code fences that might slip through
-            result = result.replace('```minilang', '').replace('```', '').strip()
+            result = result.replace('```minilang', '').replace('```', '')
             return result
         return None
     
     # ─────────────────────────────────────────────
     # Feature 2: Error Explanation
     # ─────────────────────────────────────────────
-    def explain_error(self, error_message: str, code: str) -> Optional[Dict[str, str]]:
+    def explain_error(self, error_message: str, code: str, backend: Optional[str] = None) -> Optional[Dict[str, str]]:
         """Explain a compiler error in beginner-friendly terms.
         
         Args:
@@ -193,7 +316,7 @@ Produced this compiler error:
 
 Please explain this error to a beginner:"""
 
-        result = self._generate(prompt, system, max_tokens=500)
+        result = self._generate(prompt, system, max_tokens=500, backend=backend)
         
         if not result:
             return None
@@ -207,15 +330,15 @@ Please explain this error to a beginner:"""
             # Clean up potential markdown formatting like **EXPLANATION:** or # EXPLANATION:
             clean_start = line_stripped.replace('**', '').replace('*', '').replace('#', '').strip()
             
-            if clean_start.startswith('EXPLANATION:'):
+            if clean_start.upper().startswith('EXPLANATION:'):
                 current_key = 'explanation'
-                parsed[current_key] = clean_start.replace('EXPLANATION:', '').strip()
-            elif clean_start.startswith('SUGGESTION:'):
+                parsed[current_key] = clean_start[12:].strip()
+            elif clean_start.upper().startswith('SUGGESTION:'):
                 current_key = 'suggestion'
-                parsed[current_key] = clean_start.replace('SUGGESTION:', '').strip()
-            elif clean_start.startswith('EXAMPLE:'):
+                parsed[current_key] = clean_start[11:].strip()
+            elif clean_start.upper().startswith('EXAMPLE:'):
                 current_key = 'example'
-                parsed[current_key] = clean_start.replace('EXAMPLE:', '').strip()
+                parsed[current_key] = clean_start[8:].strip()
             elif current_key:
                 parsed[current_key] += '\n' + line
         
@@ -223,11 +346,39 @@ Please explain this error to a beginner:"""
         parsed['example'] = parsed['example'].replace('```minilang', '').replace('```', '').strip()
         
         return parsed
-    
+
+    def explain_error_stream(self, error_message: str, code: str, backend: Optional[str] = None):
+        """Explain a compiler error, yielding chunks as they are generated."""
+        system = f"""You are a friendly coding tutor helping beginners understand compiler errors in MiniLang.
+{MINILANG_REFERENCE}
+
+When explaining errors:
+- Be EXTREMELY concise. The UI space is limited.
+- Use simple, beginner-friendly language
+- Explain what the error means in plain English (max 2 sentences)
+- Suggest how to fix it (max 1 sentence)
+- Show a corrected code example
+
+Respond in this exact format (use these exact headers):
+EXPLANATION: <max 2 sentences plain English explanation>
+SUGGESTION: <max 1 sentence how to fix it>
+EXAMPLE: <corrected code snippet>"""
+
+        prompt = f"""The following MiniLang code:
+```
+{code}
+```
+
+Produced this compiler error:
+{error_message}
+
+Please explain this error to a beginner:"""
+
+        yield from self._generate_stream(prompt, system, max_tokens=500, backend=backend)    
     # ─────────────────────────────────────────────
     # Feature 3: Refactoring
     # ─────────────────────────────────────────────
-    def suggest_refactor(self, code: str, selection: str) -> Optional[List[Dict[str, str]]]:
+    def suggest_refactor(self, code: str, selection: str, backend: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
         """Suggest refactoring options for selected code.
         
         Args:
@@ -263,7 +414,7 @@ Selected code to refactor:
 
 Suggest refactoring improvements:"""
 
-        result = self._generate(prompt, system, max_tokens=2048)
+        result = self._generate(prompt, system, max_tokens=2048, backend=backend)
         try:
             print(f"[AI Service] Raw Refactor Result:\n{result}\n{'='*40}")
         except UnicodeEncodeError:
@@ -347,59 +498,43 @@ Suggest refactoring improvements:"""
     # ─────────────────────────────────────────────
     # Feature 4: Documentation Generator
     # ─────────────────────────────────────────────
-    def generate_docs(self, code: str, target_info: Dict[str, Any]) -> Optional[str]:
-        """Generate documentation comment for a function or variable.
+    def generate_full_docs(self, code: str, backend: Optional[str] = None) -> Optional[str]:
+        """Generate documentation comments for all functions and important variables in the codebase.
         
         Args:
             code: The full source code
-            target_info: Dict with 'kind' ('function'|'variable'), 'text' (the declaration line)
         
         Returns:
-            A MiniLang doc comment string (/// ...), or None
+            The complete source code with MiniLang doc comments added.
         """
         system = f"""You are a documentation generator for MiniLang.
 {MINILANG_REFERENCE}
 
-Generate documentation comments using the /// prefix (triple-slash).
-For functions, document:
-- What the function does
-- Each parameter and its purpose
-- The return value
+Generate helpful documentation comments using the /// prefix (triple-slash) for functions, variables, and major logical blocks.
+GUIDELINES:
+1. Provide clear, descriptive comments (MAX 2 LINES per item).
+2. If a comment spans multiple lines, EVERY SINGLE LINE must start with the /// prefix.
+3. Document the purpose, arguments, and return values of functions.
+4. Document important variables and state changes.
+5. Place the /// comments immediately preceding the target line.
+6. Return the complete, fully-documented source code without omitting anything.
+7. Do NOT wrap it in markdown formatting or ``` blocks."""
 
-For variables, document:
-- What the variable represents
-
-Keep documentation concise but informative.
-Return ONLY the doc comment lines (each starting with ///), nothing else. No markdown formatting."""
-
-        kind = target_info.get('kind', 'function')
-        text = target_info.get('text', '')
-        
-        prompt = f"""Full program context:
+        prompt = f"""Please add /// documentation comments to this entire codebase:
 ```
 {code}
-```
+```"""
 
-Generate a documentation comment for this {kind}:
-{text}"""
-
-        result = self._generate(prompt, system, max_tokens=300)
+        result = self._generate(prompt, system, max_tokens=1500, backend=backend)
         
         if not result:
             return None
+            
+        # Clean up example (remove markdown fences if the AI stubbornly adds them)
+        result = result.replace('```minilang', '').replace('```', '').strip()
         
-        # Ensure each line starts with ///
-        doc_lines = []
-        for line in result.split('\n'):
-            line = line.strip()
-            if line.startswith('///'):
-                doc_lines.append(line)
-            elif line.startswith('//'):
-                doc_lines.append('/' + line)  # Convert // to ///
-            elif line and not line.startswith('```'):
-                doc_lines.append('/// ' + line)
-        
-        return '\n'.join(doc_lines) if doc_lines else None
+        return result
+
 
 
 # Global singleton instance
