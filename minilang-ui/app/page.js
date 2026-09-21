@@ -23,7 +23,10 @@ import {
 } from "lucide-react";
 import AutomataGraph from "../components/AutomataGraph";
 
-const source = `// MiniLang Sample Program
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const source = `// Welcome to MiniLang
+// Sample Program
 int x = 10;
 int y = 5;
 
@@ -147,7 +150,7 @@ export default function Home() {
       
       setAiRunning(true);
       try {
-        const response = await fetch("http://localhost:8000/api/autocomplete", {
+        const response = await fetch(`${API_BASE}/api/autocomplete`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
@@ -210,7 +213,7 @@ export default function Home() {
     }, 100);
 
     try { 
-        if (true) { const response = await fetch("http://localhost:8000/", {
+        if (true) { const response = await fetch(`${API_BASE}/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code, backend: mode === "Local" ? "ollama" : "groq" }),
@@ -284,7 +287,7 @@ export default function Home() {
     
     setAiRunning(true);
     try { 
-        if (true) { const response = await fetch("http://localhost:8000/api/refactor", {
+        if (true) { const response = await fetch(`${API_BASE}/api/refactor`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code, selection: selectionText, backend: mode === "Local" ? "ollama" : "groq" }),
@@ -329,7 +332,7 @@ export default function Home() {
     
     setAiRunning(true);
     try { 
-        if (true) { const response = await fetch("http://localhost:8000/api/generate-docs", {
+        if (true) { const response = await fetch(`${API_BASE}/api/generate-docs`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code, backend: mode === "Local" ? "ollama" : "groq" }),
@@ -573,7 +576,7 @@ function ErrorItem({ error, code, mode }) {
     if (explanation || loading) return;
     setLoading(true);
     try { 
-      const response = await fetch("http://localhost:8000/api/explain-error", {
+      const response = await fetch(`${API_BASE}/api/explain-error`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ error: error.message, code, line: error.line, backend: mode === "Local" ? "ollama" : "groq", stream: true }),
