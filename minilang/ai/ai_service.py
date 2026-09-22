@@ -217,7 +217,7 @@ class AIService:
                 messages.append({"role": "user", "content": prompt})
                 
                 response = client.chat.completions.create(
-                    model="llama3-70b-8192",
+                    model="llama-3.3-70b-versatile",
                     messages=messages,
                     max_tokens=max_tokens,
                     temperature=0.3,
@@ -240,10 +240,10 @@ class AIService:
                     continue
                 
                 print(f"[AI Service] Generation error: {e}")
-                return None
+                raise e
         
         print(f"[AI Service] All {max_retries} retries exhausted due to rate limiting.")
-        return None
+        raise Exception("Rate limit exhausted. Please try again later.")
     
     # ─────────────────────────────────────────────
     # Feature 1: Autocomplete
