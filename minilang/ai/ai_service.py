@@ -106,15 +106,17 @@ class AIService:
         except Exception as e:
             print(f"[AI Service] Failed to initialize Groq: {e}")
     
-    def _generate(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 180, backend: Optional[str] = None) -> Optional[str]:
+    def _generate(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 180, backend: Optional[str] = None, api_key: Optional[str] = None) -> Optional[str]:
         """Internal router method that calls the configured backend."""
-        if not self.available:
+        # Allow passing through if api_key is provided for groq, even if global service is not available
+        is_groq_req = (backend == 'groq' or (self.groq_available and backend != 'ollama'))
+        if not self.available and not (is_groq_req and api_key):
             return None
             
         if backend == 'ollama' and self.ollama_available:
             return self._generate_ollama(prompt, system_instruction, max_tokens, timeout)
-        elif self.groq_available:
-            return self._generate_groq(prompt, system_instruction, max_tokens, timeout)
+        elif is_groq_req:
+            return self._generate_groq(prompt, system_instruction, max_tokens, timeout, api_key=api_key)
         else:
             return None
 
@@ -149,16 +151,17 @@ class AIService:
         except Exception as e:
             print(f"[AI Service] Ollama generation error: {e}")
             return None
-    def _generate_stream(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 180, backend: Optional[str] = None):
+    def _generate_stream(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 180, backend: Optional[str] = None, api_key: Optional[str] = None):
         """Internal router method for streaming."""
-        if not self.available:
+        is_groq_req = (backend == 'groq' or (self.groq_available and backend != 'ollama'))
+        if not self.available and not (is_groq_req and api_key):
             return
             
         if backend == 'ollama' and self.ollama_available:
             yield from self._generate_ollama_stream(prompt, system_instruction, max_tokens, timeout)
-        elif self.groq_available:
+        elif is_groq_req:
             # We will fallback to non-streaming for groq for now, and just yield it all at once
-            res = self._generate_groq(prompt, system_instruction, max_tokens, timeout)
+            res = self._generate_groq(prompt, system_instruction, max_tokens, timeout, api_key=api_key)
             if res:
                 yield res
 
@@ -191,10 +194,10 @@ class AIService:
         except Exception as e:
             print(f"[AI Service] Ollama generation error: {e}")
 
-    def _generate_groq(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 60) -> Optional[str]:
+    def _generate_groq(self, prompt: str, system_instruction: str = "", max_tokens: int = 512, timeout: int = 60, api_key: Optional[str] = None) -> Optional[str]:
         """Internal method to call Groq and return the response text.
         Includes retry logic for rate-limit (429) errors."""
-        if not self.available:
+        if not self.available and not api_key:
             return None
         
         import time
@@ -202,6 +205,10 @@ class AIService:
         
         max_retries = 3
         
+        client = groq.Groq(api_key=api_key) if api_key else self.client
+        if not client:
+            return None
+            
         for attempt in range(max_retries):
             try:
                 messages = []
@@ -209,8 +216,8 @@ class AIService:
                     messages.append({"role": "system", "content": system_instruction})
                 messages.append({"role": "user", "content": prompt})
                 
-                response = self.client.chat.completions.create(
-                    model="groq/compound",
+                response = client.chat.completions.create(
+                    model="llama3-70b-8192",
                     messages=messages,
                     max_tokens=max_tokens,
                     temperature=0.3,
@@ -241,7 +248,7 @@ class AIService:
     # ─────────────────────────────────────────────
     # Feature 1: Autocomplete
     # ─────────────────────────────────────────────
-    def get_autocomplete(self, code_before: str, code_after: str, symbols_text: str, backend: Optional[str] = None) -> Optional[str]:
+    def get_autocomplete(self, code_before: str, code_after: str, symbols_text: str, backend: Optional[str] = None, api_key: Optional[str] = None) -> Optional[str]:
         """Generate code completion suggestion."""
         # Truncate context to improve speed and focus for local models
         before_lines = code_before.split('\n')
@@ -270,7 +277,7 @@ CRITICAL RULES:
 
 Please output ONLY the text that replaces [MISSING_CODE]:"""
 
-        result = self._generate(prompt, system, max_tokens=60, backend=backend)
+        result = self._generate(prompt, system, max_tokens=60, backend=backend, api_key=api_key)
         
         if result and result != 'NO_SUGGESTION':
             # Clean up: remove any markdown code fences that might slip through
@@ -281,7 +288,7 @@ Please output ONLY the text that replaces [MISSING_CODE]:"""
     # ─────────────────────────────────────────────
     # Feature 2: Error Explanation
     # ─────────────────────────────────────────────
-    def explain_error(self, error_message: str, code: str, backend: Optional[str] = None) -> Optional[Dict[str, str]]:
+    def explain_error(self, error_message: str, code: str, backend: Optional[str] = None, api_key: Optional[str] = None) -> Optional[Dict[str, str]]:
         """Explain a compiler error in beginner-friendly terms.
         
         Args:
@@ -316,7 +323,7 @@ Produced this compiler error:
 
 Please explain this error to a beginner:"""
 
-        result = self._generate(prompt, system, max_tokens=500, backend=backend)
+        result = self._generate(prompt, system, max_tokens=500, backend=backend, api_key=api_key)
         
         if not result:
             return None
@@ -347,7 +354,7 @@ Please explain this error to a beginner:"""
         
         return parsed
 
-    def explain_error_stream(self, error_message: str, code: str, backend: Optional[str] = None):
+    def explain_error_stream(self, error_message: str, code: str, backend: Optional[str] = None, api_key: Optional[str] = None):
         """Explain a compiler error, yielding chunks as they are generated."""
         system = f"""You are a friendly coding tutor helping beginners understand compiler errors in MiniLang.
 {MINILANG_REFERENCE}
@@ -374,11 +381,11 @@ Produced this compiler error:
 
 Please explain this error to a beginner:"""
 
-        yield from self._generate_stream(prompt, system, max_tokens=500, backend=backend)    
+        yield from self._generate_stream(prompt, system, max_tokens=500, backend=backend, api_key=api_key)    
     # ─────────────────────────────────────────────
     # Feature 3: Refactoring
     # ─────────────────────────────────────────────
-    def suggest_refactor(self, code: str, selection: str, backend: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
+    def suggest_refactor(self, code: str, selection: str, backend: Optional[str] = None, api_key: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
         """Suggest refactoring options for selected code.
         
         Args:
@@ -414,7 +421,7 @@ Selected code to refactor:
 
 Suggest refactoring improvements:"""
 
-        result = self._generate(prompt, system, max_tokens=2048, backend=backend)
+        result = self._generate(prompt, system, max_tokens=2048, backend=backend, api_key=api_key)
         try:
             print(f"[AI Service] Raw Refactor Result:\n{result}\n{'='*40}")
         except UnicodeEncodeError:
@@ -498,7 +505,7 @@ Suggest refactoring improvements:"""
     # ─────────────────────────────────────────────
     # Feature 4: Documentation Generator
     # ─────────────────────────────────────────────
-    def generate_full_docs(self, code: str, backend: Optional[str] = None) -> Optional[str]:
+    def generate_full_docs(self, code: str, backend: Optional[str] = None, api_key: Optional[str] = None) -> Optional[str]:
         """Generate documentation comments for all functions and important variables in the codebase.
         
         Args:
@@ -525,7 +532,7 @@ GUIDELINES:
 {code}
 ```"""
 
-        result = self._generate(prompt, system, max_tokens=1500, backend=backend)
+        result = self._generate(prompt, system, max_tokens=1500, backend=backend, api_key=api_key)
         
         if not result:
             return None

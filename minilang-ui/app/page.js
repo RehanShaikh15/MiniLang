@@ -20,6 +20,8 @@ import {
   Search,
   ArrowRight,
   CircleDot,
+  Settings,
+  Key
 } from "lucide-react";
 import AutomataGraph from "../components/AutomataGraph";
 
@@ -85,9 +87,30 @@ export default function Home() {
     errors: [],
   });
   const [aiRunning, setAiRunning] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
   const textareaRef = useRef(null);
   const gutterRef = useRef(null);
   const overlayRef = useRef(null);
+  
+  useEffect(() => {
+    const saved = localStorage.getItem("groq_api_key");
+    if (saved) setApiKey(saved);
+  }, []);
+  
+  const saveApiKey = (key) => {
+    setApiKey(key);
+    localStorage.setItem("groq_api_key", key);
+    setShowSettings(false);
+  };
+  
+  const requireApiKey = () => {
+    if (mode === "API" && !apiKey) {
+      setShowSettings(true);
+      return false;
+    }
+    return true;
+  };
   
   const handleEditorScroll = (e) => {
     if (gutterRef.current) {
@@ -148,6 +171,7 @@ export default function Home() {
       const cursorLine = linesBefore.length;
       const cursorCol = linesBefore[linesBefore.length - 1].length;
       
+      if (!requireApiKey()) return;
       setAiRunning(true);
       try {
         const response = await fetch(`${API_BASE}/api/autocomplete`, {
@@ -157,7 +181,8 @@ export default function Home() {
             code, 
             cursorLine, 
             cursorCol, 
-            backend: mode === "Local" ? "ollama" : "groq" 
+            backend: mode === "Local" ? "ollama" : "groq",
+            apiKey
           }),
         });
         
@@ -285,12 +310,13 @@ export default function Home() {
       return;
     }
     
+    if (!requireApiKey()) return;
     setAiRunning(true);
     try { 
         if (true) { const response = await fetch(`${API_BASE}/api/refactor`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, selection: selectionText, backend: mode === "Local" ? "ollama" : "groq" }),
+          body: JSON.stringify({ code, selection: selectionText, backend: mode === "Local" ? "ollama" : "groq", apiKey }),
         });
         const data = await response.json();
         
@@ -330,12 +356,13 @@ export default function Home() {
   const generateDocs = async () => {
     if (!code.trim() || aiRunning) return;
     
+    if (!requireApiKey()) return;
     setAiRunning(true);
     try { 
         if (true) { const response = await fetch(`${API_BASE}/api/generate-docs`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, backend: mode === "Local" ? "ollama" : "groq" }),
+          body: JSON.stringify({ code, backend: mode === "Local" ? "ollama" : "groq", apiKey }),
         });
         const data = await response.json();
         
@@ -390,6 +417,10 @@ export default function Home() {
               <span className={mode === "API" ? "knob api" : "knob"} />
             </button>
           </div>
+
+          <button type="button" className="ghost" onClick={() => setShowSettings(true)} title="Settings">
+            <Settings size={16} />
+          </button>
 
           <span className="version">v2.5.0</span>
         </div>
@@ -559,6 +590,33 @@ export default function Home() {
           </motion.div>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div className="palette-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={() => setShowSettings(false)}>
+            <motion.div className="palette" style={{ padding: '24px', width: '400px' }} initial={{ opacity: 0, y: -20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10 }} onMouseDown={(event) => event.stopPropagation()}>
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', marginBottom: '16px', color: '#e2e8f0' }}><Key size={18} /> API Settings</h2>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px' }}>Groq API Key (Stored locally)</label>
+                <input 
+                  type="password" 
+                  autoFocus
+                  placeholder="gsk_..." 
+                  defaultValue={apiKey}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveApiKey(e.target.value);
+                  }}
+                  onBlur={(e) => saveApiKey(e.target.value)}
+                  style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', padding: '10px 12px', borderRadius: '6px', fontSize: '14px', fontFamily: 'DM Mono, monospace' }}
+                />
+                <p style={{ fontSize: '11px', color: '#64748b', marginTop: '8px' }}>Your key is securely stored in your browser's localStorage and only sent to the AI service directly.</p>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button type="button" onClick={() => setShowSettings(false)} style={{ padding: '8px 16px', background: 'transparent', color: '#cbd5e1', border: '1px solid #334155', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}>Close</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
@@ -573,13 +631,19 @@ function ErrorItem({ error, code, mode }) {
   const displayMessage = expanded || !isLongError ? error.message : errorLines.slice(0, 5).join('\n') + '\n...';
 
   const explainError = async () => {
+    const apiKey = localStorage.getItem("groq_api_key");
+    if (mode === "API" && !apiKey) {
+      alert("Please configure your Groq API Key in Settings first.");
+      return;
+    }
+    
     if (explanation || loading) return;
     setLoading(true);
     try { 
       const response = await fetch(`${API_BASE}/api/explain-error`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: error.message, code, line: error.line, backend: mode === "Local" ? "ollama" : "groq", stream: true }),
+        body: JSON.stringify({ error: error.message, code, line: error.line, backend: mode === "Local" ? "ollama" : "groq", stream: true, apiKey }),
       });
       
       const reader = response.body.getReader();

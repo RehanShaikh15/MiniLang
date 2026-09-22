@@ -358,9 +358,10 @@ class CompilerAPI(BaseHTTPRequestHandler):
         cursor_line = req.get('cursorLine', 1)
         cursor_col = req.get('cursorCol', 0)
         backend = req.get('backend')
+        api_key = req.get('apiKey')
         
         ai = get_ai_service()
-        if not ai.available:
+        if not ai.available and not api_key:
             self._send_json(200, {"suggestion": None, "error": "AI service not available"})
             return
         
@@ -375,7 +376,8 @@ class CompilerAPI(BaseHTTPRequestHandler):
                 code_before=context['before'],
                 code_after=context['after'],
                 symbols_text=symbols_text,
-                backend=backend
+                backend=backend,
+                api_key=api_key
             )
             
             self._send_json(200, {"suggestion": suggestion})
@@ -393,10 +395,11 @@ class CompilerAPI(BaseHTTPRequestHandler):
         error_message = req.get('error', '')
         code = req.get('code', '')
         backend = req.get('backend')
+        api_key = req.get('apiKey')
         line = req.get('line')
         
         ai = get_ai_service()
-        if not ai.available:
+        if not ai.available and not api_key:
             self._send_json(200, {"explanation": None, "error": "AI service not available"})
             return
         
@@ -415,12 +418,12 @@ class CompilerAPI(BaseHTTPRequestHandler):
                 self.send_header('Connection', 'keep-alive')
                 self.end_headers()
                 
-                for chunk in ai.explain_error_stream(error_message, code, backend=backend):
+                for chunk in ai.explain_error_stream(error_message, code, backend=backend, api_key=api_key):
                     self.wfile.write(f"data: {json.dumps({'chunk': chunk})}\n\n".encode('utf-8'))
                     self.wfile.flush()
                 return
             
-            result = ai.explain_error(error_message, code, backend=backend)
+            result = ai.explain_error(error_message, code, backend=backend, api_key=api_key)
             self._send_json(200, result or {"explanation": "Could not generate explanation.", "suggestion": "", "example": ""})
             
         except Exception as e:
@@ -436,9 +439,10 @@ class CompilerAPI(BaseHTTPRequestHandler):
         code = req.get('code', '')
         selection = req.get('selection', '')
         backend = req.get('backend')
+        api_key = req.get('apiKey')
         
         ai = get_ai_service()
-        if not ai.available:
+        if not ai.available and not api_key:
             self._send_json(200, {"suggestions": None, "error": "AI service not available"})
             return
         
@@ -447,7 +451,7 @@ class CompilerAPI(BaseHTTPRequestHandler):
             return
         
         try:
-            suggestions = ai.suggest_refactor(code, selection, backend=backend)
+            suggestions = ai.suggest_refactor(code, selection, backend=backend, api_key=api_key)
             self._send_json(200, {"suggestions": suggestions})
             
         except Exception as e:
@@ -462,14 +466,15 @@ class CompilerAPI(BaseHTTPRequestHandler):
         """Handle POST /api/generate-docs — auto-generate doc comments."""
         code = req.get('code', '')
         backend = req.get('backend')
+        api_key = req.get('apiKey')
         
         ai = get_ai_service()
-        if not ai.available:
+        if not ai.available and not api_key:
             self._send_json(200, {"documentation": None, "error": "AI service not available"})
             return
         
         try:
-            docs = ai.generate_full_docs(code, backend=backend)
+            docs = ai.generate_full_docs(code, backend=backend, api_key=api_key)
             self._send_json(200, {
                 "documentation": docs
             })
@@ -480,42 +485,25 @@ class CompilerAPI(BaseHTTPRequestHandler):
             self._send_json(200, {"documentation": None, "error": str(e)})
 
     def _handle_set_api_key(self, req):
-        """Handle POST /api/set-api-key — save a new API key and reinitialize AI."""
+        """Handle POST /api/set-api-key — verify a new API key without saving to .env"""
         api_key = req.get('apiKey', '').strip()
         if not api_key:
             self._send_json(400, {"success": False, "error": "API key cannot be empty."})
             return
 
         try:
-            # Update the .env file
-            env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
-            lines = []
-            key_found = False
-            if os.path.exists(env_path):
-                with open(env_path, 'r') as f:
-                    for line in f:
-                        if line.strip().startswith('GROQ_API_KEY='):
-                            lines.append(f'GROQ_API_KEY={api_key}\n')
-                            key_found = True
-                        else:
-                            lines.append(line)
-            if not key_found:
-                lines.append(f'GROQ_API_KEY={api_key}\n')
-
-            with open(env_path, 'w') as f:
-                f.writelines(lines)
-
-            # Also update the current process environment
-            os.environ['GROQ_API_KEY'] = api_key
-
-            # Reinitialize the AI service with the new key
-            import minilang.ai.ai_service as ai_mod
-            ai_mod._ai_service = ai_mod.AIService()
-
-            ai = get_ai_service()
+            # Just test if the key works
+            import groq
+            client = groq.Groq(api_key=api_key)
+            client.models.list()
             self._send_json(200, {
-                "success": ai.groq_available,
-                "error": None if ai.groq_available else "Key saved but could not connect to Groq. Please check the key."
+                "success": True,
+                "error": None
+            })
+        except Exception as e:
+            self._send_json(200, {
+                "success": False,
+                "error": "Invalid API key or could not connect to Groq."
             })
         except Exception as e:
             print(f"[Set API Key Error] {e}")
