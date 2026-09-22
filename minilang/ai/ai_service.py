@@ -217,7 +217,7 @@ class AIService:
                 messages.append({"role": "user", "content": prompt})
                 
                 response = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.1-70b-versatile",
                     messages=messages,
                     max_tokens=max_tokens,
                     temperature=0.3,
