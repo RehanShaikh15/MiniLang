@@ -209,6 +209,23 @@ class AIService:
         if not client:
             return None
             
+        # Dynamically determine the best available model
+        try:
+            available_models = [m.id for m in client.models.list().data]
+            preferred_models = [
+                "llama-3.3-70b-versatile",
+                "llama-3.3-70b-specdec",
+                "llama-3.1-70b-versatile",
+                "llama3-70b-8192",
+                "llama-3.1-8b-instant",
+                "llama3-8b-8192",
+                "mixtral-8x7b-32768"
+            ]
+            target_model = next((m for m in preferred_models if m in available_models), available_models[0] if available_models else "llama-3.3-70b-versatile")
+        except Exception as e:
+            print(f"[AI Service] Could not fetch models list: {e}")
+            target_model = "llama-3.3-70b-versatile"
+            
         for attempt in range(max_retries):
             try:
                 messages = []
@@ -217,7 +234,7 @@ class AIService:
                 messages.append({"role": "user", "content": prompt})
                 
                 response = client.chat.completions.create(
-                    model="llama-3.1-70b-versatile",
+                    model=target_model,
                     messages=messages,
                     max_tokens=max_tokens,
                     temperature=0.3,
