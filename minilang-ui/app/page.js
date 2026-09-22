@@ -596,7 +596,10 @@ export default function Home() {
             <motion.div className="palette" style={{ padding: '24px', width: '400px' }} initial={{ opacity: 0, y: -20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10 }} onMouseDown={(event) => event.stopPropagation()}>
               <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', marginBottom: '16px', color: '#e2e8f0' }}><Key size={18} /> API Settings</h2>
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px' }}>Groq API Key (Stored locally)</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '13px', color: '#94a3b8' }}>Groq API Key (Stored locally)</label>
+                  <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#4de1ff', textDecoration: 'none' }}>Get your key &rarr;</a>
+                </div>
                 <input 
                   type="password" 
                   autoFocus
