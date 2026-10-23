@@ -1,0 +1,82 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{setspace}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Patent Specification - MiniLang}
+\fancyhead[R]{\thepage}
+
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+
+\begin{document}
+\setstretch{1.5} % USPTO prefers double or 1.5 spacing
+
+\begin{center}
+    \Large \textbf{PATENT SPECIFICATION}
+\end{center}
+\vspace{1em}
+
+\section*{1. TITLE OF THE INVENTION}
+MiniLang: An AI-Co-Pilot Assisted Web Integrated Development Environment (IDE) with Live Compiling Pipeline for Statically-Typed Languages
+
+\section*{2. FIELD OF THE INVENTION}
+[0001] The present invention relates generally to the field of software engineering tools, cloud-based programming interfaces, and compiler construction. More particularly, the invention relates to an integrated development environment (IDE) deployed within a browser client that executes continuous, real-time lexical and syntax analysis pipelines tightly coupled with abstract syntax tree (AST) transformations.
+
+[0002] Even more specifically, the present invention pertains to the specialized domain of real-time, artificial intelligence (AI)-driven code refactoring, context-aware semantic error streaming, and dynamic state-machine (such as Deterministic Finite Automaton or DFA) visualization within interactive web applications, engineered to eliminate traditional compiler latency and enhance developer cognitive integration.
+
+\section*{3. BACKGROUND OF THE INVENTION}
+[0003] The evolution of software compilation and integrated development environments (IDEs) has historically been anchored to localized, desktop-bound architectures. Traditional compiler toolchains (e.g., GCC, Clang) and their associated heavy IDE clients (e.g., Eclipse, Visual Studio) require substantial local computational resources, explicit installation of runtime environments, and significant disk storage overhead. Such standalone architectures introduce a disjointed developer experience characterized by discrete, synchronous "build" steps. This blocking Input/Output (I/O) paradigm enforces a delayed feedback loop, whereby a developer writes source text, manually invokes a compilation phase, and passively awaits terminal feedback.
+
+[0004] Furthermore, traditional compiler error reporting is notoriously cryptic. When a syntax or semantic fault is encountered, standard compilers emit highly rigid, static error logs that often fail to directly correlate the abstract parser state with human-readable context. The resulting disconnect between static compiler errors and user comprehension creates a steep learning curve, particularly detrimental in educational environments and when navigating complex, statically-typed custom languages.
+
+[0005] In an attempt to mitigate localized computational burdens, browser-based IDEs have emerged. However, current web-based solutions exhibit profound deficiencies when attempting to handle robust, real-time compilation of statically-typed languages. Most browser IDEs act merely as thin clients that dispatch source code payloads to remote virtual machines, relying on periodic polling to fetch compilation results. This architecture reintroduces network-induced latency, thereby failing to achieve a truly interactive, continuous compilation state. Crucially, these systems lack the capability to expose internal compiler states to the user; the absence of interactive execution states, such as dynamic Deterministic Finite Automaton (DFA) grid visualizations and real-time AST manipulation panels, deprives the developer of critical transparency into the parsing and interpretation life cycles.
+
+[0006] Parallel to advancements in web IDEs, artificial intelligence (AI) has been increasingly leveraged to assist in programming tasks. Nevertheless, current AI-assisted programming tools remain encumbered by high-latency, synchronous polling architectures. They function as disconnected external toolchains that lack deep, localized semantic context. Because existing AI assistants operate outside the boundary of the local semantic symbol table, their suggestions are frequently contextually ignorant of the specific memory mappings and scope constraints instantiated during the parsing phase.
+
+[0007] Additionally, there is a distinct inability in current systems to stream token-by-token error explanations asynchronously. When a parsing failure occurs, the generation of an AI-driven explanation is typically a monolithic, blocking operation that freezes the user interface until the full inference completes. The industry lacks a mechanism utilizing Server-Sent Events (SSE) tightly integrated with the compiler's semantic analysis engine to provide non-blocking, inline, token-by-token contextual explanations. Thus, there exists a long-felt but unresolved need for a web-based IDE that marries a zero-latency live-compiling pipeline with a deeply integrated, multi-model AI co-pilot capable of local semantic awareness and asynchronous visualization.
+
+\section*{4. SUMMARY OF THE INVENTION}
+[0008] The following summary is provided to introduce a selection of concepts in a simplified form that are further described below in the Detailed Description. This summary is not intended to identify key features or essential features of the claimed subject matter, nor is it intended to be used to limit the scope of the claimed subject matter.
+
+[0009] In view of the foregoing disadvantages inherent in the known types of software engineering tools and integrated development environments (IDEs) present in the prior art, the present invention provides a novel AI-Co-Pilot Assisted Web IDE equipped with a live compiling pipeline. The general purpose of the present invention, which will be described subsequently in greater detail, is to provide a zero-latency, highly interactive programming environment tailored for statically-typed languages, integrated seamlessly with a multi-model artificial intelligence (AI) ecosystem.
+
+[0010] To attain this, the present invention fundamentally comprises a dual-node architecture: a highly responsive frontend client (e.g., constructed utilizing React 19 and Vite 8) and an autonomous REST API backend (e.g., executing Python 3.10+). The frontend client is specifically configured to perform keystroke-triggered, debounced transmission of source text. This debouncing mechanism mitigates network flooding while guaranteeing continuous, near real-time state synchronization.
+
+[0011] The backend infrastructure is orchestrated to execute a multi-stage compiler pipeline asynchronously. Upon receiving a debounced source text payload, the backend instantaneously performs lexical analysis via a robust Regex Lexer, followed by structural validation employing an LALR(1) parser architecture (such as the Lark parsing framework). The successful execution of the parsing phase culminates in the generation of a strictly typed Abstract Syntax Tree (AST). Concurrently, a semantic multi-scope symbol table is extracted and populated in-memory, defining local execution constraints and variable lifetimes. Subsequently, a Three-Address Code (TAC) Intermediate Representation (IR), strictly featuring explicit conditional and unconditional GOTO jumps, is synthesized to model control flow explicitly.
+
+[0012] A primary objective of the present invention is to provide a non-blocking, visual learning aid system. The frontend client leverages the processed compiler states to render an interactive Deterministic Finite Automaton (DFA) transition grid, a dynamic AST panel, and a live TAC output console. Furthermore, a tree-walking interpreter evaluates the generated IR, capturing the execution standard output (stdout) within a continuous execution buffer, which is immediately propagated back to the frontend client.
+
+[0013] Another primary object of the invention is the seamless integration of a context-aware AI co-pilot. The backend acts as a routing layer to multi-model LLM architectures (including, but not limited to, Ollama, Gemini, and OpenAI configurations). The AI co-pilot continuously ingests the locally extracted semantic symbol table, thereby generating Ghost Text Autocomplete suggestions that possess deep contextual and structural awareness. When lexical or semantic failures are encountered by the parser, the system does not passively emit static error logs; rather, it invokes an asynchronous generation of inline, beginner-friendly error explanations that are streamed back to the frontend on a token-by-token basis utilizing Server-Sent Events (SSE).
+
+\section*{5. BRIEF DESCRIPTION OF THE DRAWINGS}
+[0014] The invention will be better understood and objects other than those set forth above will become apparent when consideration is given to the following detailed description thereof. Such description makes reference to the annexed drawings wherein:
+
+[0015] \textbf{FIG. 1} is a comprehensive system architecture block diagram illustrating the topological division between the React-based frontend client and the Python-driven REST API backend, detailing the interconnectivity and primary module boundaries.
+
+[0016] \textbf{FIG. 2} is a detailed schematic flowchart illustrating the sequential and cyclical phases of the multi-stage compiler pipeline, traversing from source text ingestion through the Regex Lexer, LALR(1) Parser, typed AST generation, Semantic multi-scope symbol table extraction, Three-Address Code (TAC) IR generation, and concluding at the Tree-walking interpreter phase.
+
+[0017] \textbf{FIG. 3} is a representative graphical user interface (GUI) diagram depicting the layout of the web-based IDE, specifically highlighting the real-time code editor buffer alongside the dynamically updated, interactive DFA transition grid and the structured AST visualization panel.
+
+[0018] \textbf{FIG. 4} is a sequence diagram showcasing the asynchronous communication protocol and execution flow governing the Server-Sent Events (SSE) streaming architecture, demonstrating the low-latency delivery of AI-generated inline error explanations triggered by parser exception states.
+
+\section*{6. DETAILED DESCRIPTION OF THE PREFERRED EMBODIMENTS}
+\textit{[To be expanded upon your approval]}
+
+\section*{7. CLAIMS}
+\textit{[To be expanded upon your approval]}
+
+\section*{8. ABSTRACT OF THE DISCLOSURE}
+\textit{[To be expanded upon your approval]}
+
+\end{document}
