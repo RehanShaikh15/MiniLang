@@ -104,14 +104,6 @@ export default function Home() {
     setShowSettings(false);
   };
   
-  const requireApiKey = () => {
-    if (mode === "API" && !apiKey) {
-      setShowSettings(true);
-      return false;
-    }
-    return true;
-  };
-  
   const handleEditorScroll = (e) => {
     if (gutterRef.current) {
       gutterRef.current.style.transform = `translateY(-${e.target.scrollTop}px)`;
@@ -171,7 +163,6 @@ export default function Home() {
       const cursorLine = linesBefore.length;
       const cursorCol = linesBefore[linesBefore.length - 1].length;
       
-      if (!requireApiKey()) return;
       setAiRunning(true);
       try {
         const response = await fetch(`${API_BASE}/api/autocomplete`, {
@@ -310,7 +301,6 @@ export default function Home() {
       return;
     }
     
-    if (!requireApiKey()) return;
     setAiRunning(true);
     try { 
         if (true) { const response = await fetch(`${API_BASE}/api/refactor`, {
@@ -356,7 +346,6 @@ export default function Home() {
   const generateDocs = async () => {
     if (!code.trim() || aiRunning) return;
     
-    if (!requireApiKey()) return;
     setAiRunning(true);
     try { 
         if (true) { const response = await fetch(`${API_BASE}/api/generate-docs`, {
@@ -635,11 +624,6 @@ function ErrorItem({ error, code, mode }) {
 
   const explainError = async () => {
     const apiKey = localStorage.getItem("groq_api_key");
-    if (mode === "API" && !apiKey) {
-      alert("Please configure your Groq API Key in Settings first.");
-      return;
-    }
-    
     if (explanation || loading) return;
     setLoading(true);
     try { 

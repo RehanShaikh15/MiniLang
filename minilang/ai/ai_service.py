@@ -72,7 +72,7 @@ class AIService:
                 try:
                     self.client = groq.Groq(api_key=api_key)
                     self.groq_available = True
-                    print("[AI Service] Groq AI initialized successfully (groq/compound)")
+                    print("[AI Service] Groq AI initialized successfully")
                 except Exception as e:
                     print(f"[AI Service] Failed to initialize Groq: {e}")
         else:
@@ -102,7 +102,7 @@ class AIService:
         try:
             self.client = groq.Groq(api_key=api_key)
             self.available = True
-            print("[AI Service] Groq AI initialized successfully (groq/compound)")
+            print("[AI Service] Groq AI initialized successfully")
         except Exception as e:
             print(f"[AI Service] Failed to initialize Groq: {e}")
     
@@ -213,18 +213,13 @@ class AIService:
         try:
             available_models = [m.id for m in client.models.list().data]
             preferred_models = [
-                "llama-3.3-70b-versatile",
-                "llama-3.3-70b-specdec",
-                "llama-3.1-70b-versatile",
-                "llama3-70b-8192",
-                "llama-3.1-8b-instant",
-                "llama3-8b-8192",
-                "mixtral-8x7b-32768"
+                "openai/gpt-oss-120b",
+                "qwen/qwen3.8-27b",
             ]
-            target_model = next((m for m in preferred_models if m in available_models), available_models[0] if available_models else "llama-3.3-70b-versatile")
+            target_model = next((m for m in preferred_models if m in available_models), "openai/gpt-oss-120b")
         except Exception as e:
             print(f"[AI Service] Could not fetch models list: {e}")
-            target_model = "llama-3.3-70b-versatile"
+            target_model = "openai/gpt-oss-120b"
             
         for attempt in range(max_retries):
             try:
@@ -236,8 +231,9 @@ class AIService:
                 response = client.chat.completions.create(
                     model=target_model,
                     messages=messages,
-                    max_tokens=max_tokens,
+                    max_completion_tokens=max(max_tokens, 512),
                     temperature=0.3,
+                    reasoning_effort="low",
                     timeout=timeout
                 )
                 
